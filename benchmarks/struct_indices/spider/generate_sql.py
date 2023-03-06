@@ -9,7 +9,13 @@ from langchain import OpenAI
 from sqlalchemy import create_engine
 from tqdm import tqdm
 
-from gpt_index import GPTSQLStructStoreIndex, LLMPredictor, SQLDatabase
+from gpt_index import (
+    GPTSimpleVectorIndex,
+    GPTSQLStructStoreIndex,
+    LLMPredictor,
+    SQLDatabase,
+)
+from gpt_index.indices.struct_store.container_builder import SQLContextContainerBuilder
 
 logging.getLogger("root").setLevel(logging.WARNING)
 
@@ -20,12 +26,20 @@ _sql_from_error_msg = re.compile(r"\[SQL: (.*?)\]", re.DOTALL)
 
 
 def _generate_sql(
-    llama_index: GPTSQLStructStoreIndex,
+    struct_index: GPTSQLStructStoreIndex,
+    table_schema_index: GPTSimpleVectorIndex,
+    context_builder: SQLContextContainerBuilder,
     nl_query_text: str,
 ) -> str:
     """Generate SQL query for the given NL query text."""
     try:
-        response = llama_index.query(nl_query_text, mode="default")
+        context_builder.query_index_for_context(
+            table_schema_index, nl_query_text, store_context_str=True
+        )
+        context_container = context_builder.build_context_container()
+        response = struct_index.query(
+            nl_query_text, sql_context_container=context_container, mode="default"
+        )
         if (
             response.extra_info is None
             or "sql_query" not in response.extra_info
@@ -51,8 +65,11 @@ def generate_sql(llama_indexes: dict, examples: list, output_file: str) -> None:
         for example in tqdm(examples, desc=f"Generating {output_file}"):
             db_name = example["db_id"]
             nl_query_text = example["question"]
+            struct_index, table_schema_index, context_builder = llama_indexes[db_name]
             try:
-                sql_query = _generate_sql(llama_indexes[db_name], nl_query_text)
+                sql_query = _generate_sql(
+                    struct_index, table_schema_index, context_builder, nl_query_text
+                )
             except Exception as e:
                 print(
                     f"Failed to generate SQL query for question: "
@@ -107,18 +124,28 @@ if __name__ == "__main__":
         llm=OpenAI(temperature=0, model_name="text-davinci-003")
     )
     llm_indexes = {}
-    for db_name, (db, engine) in databases.items():
+    for db_name, (db, engine) in tqdm(databases.items(), desc="Creating LlamaIndexes"):
         # Get the name of the first table in the database.
         # This is a hack to get a table name for the index, which can use any
         # table in the database.
         table_name = engine.execute(
             "select name from sqlite_master where type = 'table'"
         ).fetchone()[0]
-        llm_indexes[db_name] = GPTSQLStructStoreIndex(
+        # build a vector index from the table schema information
+        context_builder = SQLContextContainerBuilder(db)
+        table_schema_index = context_builder.derive_index_from_context(
+            GPTSimpleVectorIndex,
+        )
+        struct_index = GPTSQLStructStoreIndex(
             documents=[],
             llm_predictor=llm_predictor,
             sql_database=db,
             table_name=table_name,
+        )
+        llm_indexes[db_name] = (
+            struct_index,
+            table_schema_index,
+            context_builder,
         )
 
     # Generate SQL queries.
