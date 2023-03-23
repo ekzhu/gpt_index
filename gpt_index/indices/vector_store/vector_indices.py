@@ -214,6 +214,7 @@ class GPTFaissIndex(GPTVectorStoreIndex):
     def save_to_disk(
         self,
         save_path: str,
+        encoding: str = "ascii",
         faiss_index_save_path: Optional[str] = None,
         **save_kwargs: Any,
     ) -> None:
@@ -228,11 +229,12 @@ class GPTFaissIndex(GPTVectorStoreIndex):
 
         Args:
             save_path (str): The save_path of the file.
+            encoding (str): The encoding to use when saving the file.
             faiss_index_save_path (Optional[str]): The save_path of the
                 Faiss index file. If not specified, the Faiss index
                 will not be saved to disk.
         """
-        super().save_to_disk(save_path, **save_kwargs)
+        super().save_to_disk(save_path, encoding=encoding, **save_kwargs)
 
         if faiss_index_save_path is not None:
             import faiss
@@ -261,6 +263,7 @@ class GPTPineconeIndex(GPTVectorStoreIndex):
             embedding similarity.
         chunk_size_limit (int): Maximum number of tokens per chunk. NOTE:
             in Pinecone the default is 2048 due to metadata size restrictions.
+
     """
 
     index_struct_cls: Type[IndexDict] = PineconeIndexDict
@@ -269,7 +272,11 @@ class GPTPineconeIndex(GPTVectorStoreIndex):
         self,
         documents: Optional[Sequence[DOCUMENTS_INPUT]] = None,
         pinecone_index: Optional[Any] = None,
+        metadata_filters: Optional[Dict[str, Any]] = None,
         pinecone_kwargs: Optional[Dict] = None,
+        insert_kwargs: Optional[Dict] = None,
+        query_kwargs: Optional[Dict] = None,
+        delete_kwargs: Optional[Dict] = None,
         index_struct: Optional[IndexDict] = None,
         text_qa_template: Optional[QuestionAnswerPrompt] = None,
         llm_predictor: Optional[LLMPredictor] = None,
@@ -282,10 +289,16 @@ class GPTPineconeIndex(GPTVectorStoreIndex):
             raise ValueError("pinecone_index is required.")
         if pinecone_kwargs is None:
             pinecone_kwargs = {}
+
         vector_store = kwargs.pop(
             "vector_store",
             PineconeVectorStore(
-                pinecone_index=pinecone_index, pinecone_kwargs=pinecone_kwargs
+                pinecone_index=pinecone_index,
+                metadata_filters=metadata_filters,
+                pinecone_kwargs=pinecone_kwargs,
+                insert_kwargs=insert_kwargs,
+                query_kwargs=query_kwargs,
+                delete_kwargs=delete_kwargs,
             ),
         )
 
@@ -314,7 +327,11 @@ class GPTPineconeIndex(GPTVectorStoreIndex):
         del query_kwargs["vector_store"]
         vector_store = cast(PineconeVectorStore, self._vector_store)
         query_kwargs["pinecone_index"] = vector_store._pinecone_index
+        query_kwargs["metadata_filters"] = vector_store._metadata_filters
         query_kwargs["pinecone_kwargs"] = vector_store._pinecone_kwargs
+        query_kwargs["insert_kwargs"] = vector_store._insert_kwargs
+        query_kwargs["query_kwargs"] = vector_store._query_kwargs
+        query_kwargs["delete_kwargs"] = vector_store._delete_kwargs
 
 
 class GPTWeaviateIndex(GPTVectorStoreIndex):
