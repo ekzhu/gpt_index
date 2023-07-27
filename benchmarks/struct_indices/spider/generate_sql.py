@@ -5,13 +5,13 @@ import logging
 import os
 import re
 
-from langchain.chat_models import ChatOpenAI
-from langchain.llms import OpenAI
-from langchain.schema import BaseLanguageModel
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from tqdm import tqdm
 
-from gpt_index import GPTSQLStructStoreIndex, LLMPredictor, SQLDatabase
+from llama_index import SQLStructStoreIndex, LLMPredictor, SQLDatabase
+from typing import Any, cast
+
+from llama_index.llms.openai import OpenAI
 
 logging.getLogger("root").setLevel(logging.WARNING)
 
@@ -21,18 +21,19 @@ _newlines = re.compile(r"\n+")
 
 
 def _generate_sql(
-    llama_index: GPTSQLStructStoreIndex,
+    llama_index: SQLStructStoreIndex,
     nl_query_text: str,
 ) -> str:
     """Generate SQL query for the given NL query text."""
-    response = llama_index.query(nl_query_text)
+    query_engine = llama_index.as_query_engine()
+    response = query_engine.query(nl_query_text)
     if (
-        response.extra_info is None
-        or "sql_query" not in response.extra_info
-        or response.extra_info["sql_query"] is None
+        response.metadata is None
+        or "sql_query" not in response.metadata
+        or response.metadata["sql_query"] is None
     ):
         raise RuntimeError("No SQL query generated.")
-    query = response.extra_info["sql_query"]
+    query = response.metadata["sql_query"]
     # Remove newlines and extra spaces.
     query = _newlines.sub(" ", query)
     query = _spaces.sub(" ", query)
@@ -104,25 +105,26 @@ if __name__ == "__main__":
         databases[db_name] = (SQLDatabase(engine=engine), engine)
 
     # Create the LlamaIndexes for all databases.
-    if args.model in ["gpt-3.5-turbo", "gpt-4"]:
-        llm: BaseLanguageModel = ChatOpenAI(model=args.model, temperature=0)
-    else:
-        llm = OpenAI(model=args.model, temperature=0)
+    llm = OpenAI(model=args.model, temperature=0)
     llm_predictor = LLMPredictor(llm=llm)
     llm_indexes = {}
     for db_name, (db, engine) in databases.items():
         # Get the name of the first table in the database.
         # This is a hack to get a table name for the index, which can use any
         # table in the database.
-        table_name = engine.execute(
-            "select name from sqlite_master where type = 'table'"
-        ).fetchone()[0]
-        llm_indexes[db_name] = GPTSQLStructStoreIndex(
-            documents=[],
-            llm_predictor=llm_predictor,
-            sql_database=db,
-            table_name=table_name,
-        )
+        with engine.connect() as connection:
+            table_name = cast(
+                Any,
+                connection.execute(
+                    text("select name from sqlite_master where type = 'table'")
+                ).fetchone(),
+            )[0]
+            llm_indexes[db_name] = SQLStructStoreIndex.from_documents(
+                documents=[],
+                llm_predictor=llm_predictor,
+                sql_database=db,
+                table_name=table_name,
+            )
 
     # Generate SQL queries.
     generate_sql(

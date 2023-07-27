@@ -1,27 +1,22 @@
-# 🗂️ LlamaIndex 🦙 (GPT Index)
+# 🗂️ LlamaIndex 🦙
 
-> ⚠️ **NOTE**: We are rebranding GPT Index as LlamaIndex! We will carry out this transition gradually.
+LlamaIndex (GPT Index) is a data framework for your LLM application.
 
-> **2/25/2023**: By default, our docs/notebooks/instructions now reference "LlamaIndex"
-instead of "GPT Index".
-
-> **2/19/2023**: By default, our docs/notebooks/instructions now use the `llama-index` package. However the `gpt-index` package still exists as a duplicate!
-
-> **2/16/2023**: We have a duplicate `llama-index` pip package. Simply replace all imports of `gpt_index` with `llama_index` if you choose to `pip install llama-index`.
-
-LlamaIndex (GPT Index) is a project that provides a central interface to connect your LLM's with external data.
-
-PyPi: 
+PyPI: 
 - LlamaIndex: https://pypi.org/project/llama-index/.
 - GPT Index (duplicate): https://pypi.org/project/gpt-index/.
 
-Documentation: https://gpt-index.readthedocs.io/en/latest/.
+Documentation: https://gpt-index.readthedocs.io/.
 
-Twitter: https://twitter.com/gpt_index.
+Twitter: https://twitter.com/llama_index.
 
 Discord: https://discord.gg/dGcwcsnxhU.
 
-LlamaHub (community library of data loaders): https://llamahub.ai
+### Ecosystem
+
+- LlamaHub (community library of data loaders): https://llamahub.ai
+- LlamaLab (cutting-edge AGI projects using LlamaIndex): https://github.com/run-llama/llama-lab
+
 
 ## 🚀 Overview
 
@@ -30,30 +25,26 @@ LlamaHub (community library of data loaders): https://llamahub.ai
 ### Context
 - LLMs are a phenomenonal piece of technology for knowledge generation and reasoning. They are pre-trained on large amounts of publicly available data.
 - How do we best augment LLMs with our own private data?
-- One paradigm that has emerged is *in-context* learning (the other is finetuning), where we insert context into the input prompt. That way,
-we take advantage of the LLM's reasoning capabilities to generate a response.
 
-To perform LLM's data augmentation in a performant, efficient, and cheap manner, we need to solve two components:
-- Data Ingestion
-- Data Indexing
+We need a comprehensive toolkit to help perform this data augmentation for LLMs.
 
 ### Proposed Solution
 
-That's where the **LlamaIndex** comes in. LlamaIndex is a simple, flexible interface between your external data and LLMs. It provides the following tools in an easy-to-use fashion:
+That's where **LlamaIndex** comes in. LlamaIndex is a "data framework" to help you build LLM apps. It provides the following tools:
 
-- Offers **data connectors** to your existing data sources and data formats (API's, PDF's, docs, SQL, etc.)
-- Provides **indices** over your unstructured and structured data for use with LLM's. 
-These indices help to abstract away common boilerplate and pain points for in-context learning:
-   - Storing context in an easy-to-access format for prompt insertion.
-   - Dealing with prompt limitations (e.g. 4096 tokens for Davinci) when context is too big.
-   - Dealing with text splitting.
-- Provides users an interface to **query** the index (feed in an input prompt) and obtain a knowledge-augmented output.
-- Offers you a comprehensive toolset trading off cost and performance.
+- Offers **data connectors** to ingest your existing data sources and data formats (APIs, PDFs, docs, SQL, etc.)
+- Provides ways to **structure your data** (indices, graphs) so that this data can be easily used with LLMs.
+- Provides an **advanced retrieval/query interface over your data**: Feed in any LLM input prompt, get back retrieved context and knowledge-augmented output.
+- Allows easy integrations with your outer application framework (e.g. with LangChain, Flask, Docker, ChatGPT, anything else).
+
+LlamaIndex provides tools for both beginner users and advanced users. Our high-level API allows beginner users to use LlamaIndex to ingest and query their data in
+5 lines of code. Our lower-level APIs allow advanced users to customize and extend any module (data connectors, indices, retrievers, query engines, reranking modules),
+to fit their needs.
 
 
 ## 💡 Contributing
 
-Interesting in contributing? See our [Contribution Guide](CONTRIBUTING.md) for more details.
+Interested in contributing? See our [Contribution Guide](CONTRIBUTING.md) for more details.
 
 ## 📄 Documentation
 
@@ -75,23 +66,36 @@ To build a simple vector store index:
 import os
 os.environ["OPENAI_API_KEY"] = 'YOUR_OPENAI_API_KEY'
 
-from llama_index import GPTSimpleVectorIndex, SimpleDirectoryReader
+from llama_index import VectorStoreIndex, SimpleDirectoryReader
 documents = SimpleDirectoryReader('data').load_data()
-index = GPTSimpleVectorIndex(documents)
+index = VectorStoreIndex.from_documents(documents)
 ```
 
-To save to and load from disk:
-```python
-# save to disk
-index.save_to_disk('index.json')
-# load from disk
-index = GPTSimpleVectorIndex.load_from_disk('index.json')
-```
 
 To query:
 ```python
-index.query("<question_text>?")
+query_engine = index.as_query_engine()
+query_engine.query("<question_text>?")
 ```
+
+
+By default, data is stored in-memory.
+To persist to disk (under `./storage`):
+
+```python
+index.storage_context.persist()
+```
+
+To reload from disk:
+```python
+from llama_index import StorageContext, load_index_from_storage
+
+# rebuild storage context
+storage_context = StorageContext.from_defaults(persist_dir='./storage')
+# load index
+index = load_index_from_storage(storage_context)
+```
+
 
 ## 🔧 Dependencies
 
@@ -110,7 +114,7 @@ author = {Liu, Jerry},
 doi = {10.5281/zenodo.1234},
 month = {11},
 title = {{LlamaIndex}},
-url = {https://github.com/jerryjliu/gpt_index},
+url = {https://github.com/jerryjliu/llama_index},
 year = {2022}
 }
 ```

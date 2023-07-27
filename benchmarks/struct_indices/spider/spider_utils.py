@@ -2,13 +2,12 @@
 
 import json
 import os
-from typing import Dict, Tuple, Union
+from typing import Dict, Tuple
 
-from langchain import OpenAI
-from langchain.chat_models import ChatOpenAI
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
-from gpt_index import GPTSQLStructStoreIndex, LLMPredictor, SQLDatabase
+from llama_index import SQLStructStoreIndex, LLMPredictor, SQLDatabase
+from llama_index.llms.openai import OpenAI
 
 
 def load_examples(spider_dir: str) -> Tuple[list, list]:
@@ -22,9 +21,7 @@ def load_examples(spider_dir: str) -> Tuple[list, list]:
     return train_spider + train_others, dev
 
 
-def create_indexes(
-    spider_dir: str, llm: Union[ChatOpenAI, OpenAI]
-) -> Dict[str, GPTSQLStructStoreIndex]:
+def create_indexes(spider_dir: str, llm: OpenAI) -> Dict[str, SQLStructStoreIndex]:
     """Create indexes for all databases."""
     # Create all necessary SQL database objects.
     databases = {}
@@ -35,12 +32,15 @@ def create_indexes(
         engine = create_engine("sqlite:///" + db_path)
         databases[db_name] = SQLDatabase(engine=engine)
         # Test connection.
-        engine.execute("select name from sqlite_master where type = 'table'").fetchone()
+        with engine.connect() as connection:
+            connection.execute(
+                text("select name from sqlite_master where type = 'table'")
+            ).fetchone()
 
     llm_predictor = LLMPredictor(llm=llm)
     llm_indexes = {}
     for db_name, db in databases.items():
-        llm_indexes[db_name] = GPTSQLStructStoreIndex(
+        llm_indexes[db_name] = SQLStructStoreIndex(
             llm_predictor=llm_predictor,
             sql_database=db,
         )

@@ -5,13 +5,14 @@ import json
 import logging
 import os
 from typing import Dict, List, Optional
+from llama_index.llms.base import ChatMessage, MessageRole
 
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import HumanMessage
+from llama_index.llms.openai import OpenAI
+from llama_index.response.schema import Response
 from spider_utils import create_indexes, load_examples
 from tqdm import tqdm
 
-from gpt_index.indices.struct_store.sql import GPTSQLStructStoreIndex
+from llama_index.indices.struct_store.sql import SQLStructStoreIndex, SQLQueryMode
 
 logging.getLogger("root").setLevel(logging.WARNING)
 
@@ -44,36 +45,37 @@ HypothesisAnswerCorrect: """
 
 
 def _answer(
-    llm: ChatOpenAI, question: str, sql_query: str, sql_result: Optional[str]
+    llm: OpenAI, question: str, sql_query: str, sql_result: Optional[str]
 ) -> str:
     prompt = answer_template.format(
         question=question, sql_query=sql_query, sql_result=sql_result
     )
-    response = llm([HumanMessage(content=prompt)])
-    return response.content
+    response = llm.chat([ChatMessage(role=MessageRole.USER, content=prompt)])
+    return response.message.content or ""
 
 
 def _match(
-    llm: ChatOpenAI, question: str, reference_answer: str, hypothesis_answer: str
+    llm: OpenAI, question: str, reference_answer: str, hypothesis_answer: str
 ) -> bool:
     prompt = match_template.format(
         question=question,
         reference_answer=reference_answer,
         hypothesis_answer=hypothesis_answer,
     )
-    response = llm([HumanMessage(content=prompt)])
-    return "true" in response.content.lower()
+    response = llm.chat([ChatMessage(role=MessageRole.USER, content=prompt)])
+    content = response.message.content or ""
+    return "true" in content.lower()
 
 
 def _get_answers(
-    llm: ChatOpenAI,
-    indexes: Dict[str, GPTSQLStructStoreIndex],
+    llm: OpenAI,
+    indexes: Dict[str, SQLStructStoreIndex],
     db_names: List[str],
     sql_queries: List[str],
     examples: List[dict],
     output_filename: str,
     use_cache: bool,
-) -> list[dict]:
+) -> List[dict]:
     if use_cache and os.path.exists(output_filename):
         with open(output_filename, "r") as f:
             return json.load(f)
@@ -96,7 +98,9 @@ def _get_answers(
             result["sql_result"] = "ERROR"
             result["answer"] = "ERROR"
         try:
-            resp = indexes[db_name].query(sql_query, mode="sql")
+            query_engine = indexes[db_name].as_query_engine(query_mode=SQLQueryMode.SQL)
+            resp = query_engine.query(sql_query)
+            assert isinstance(resp, Response)
             result["sql_result"] = resp.response
             if resp.response is None:
                 result["answer"] = ""
@@ -109,10 +113,10 @@ def _get_answers(
 
 
 def _match_answers(
-    llm: ChatOpenAI,
-    gold_results: list[dict],
-    pred_results: list[dict],
-    examples: list[dict],
+    llm: OpenAI,
+    gold_results: List[dict],
+    pred_results: List[dict],
+    examples: List[dict],
     output_filename: str,
 ) -> float:
     results = []
@@ -209,7 +213,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Create the LlamaIndexes for all databases.
-    llm = ChatOpenAI(model=args.model, temperature=0)
+    llm = OpenAI(model=args.model, temperature=0)
 
     # Load all examples.
     train, dev = load_examples(args.spider_dir)

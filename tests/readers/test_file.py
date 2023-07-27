@@ -3,7 +3,9 @@
 from tempfile import TemporaryDirectory
 from typing import Any, Dict
 
-from gpt_index.readers.file.base import SimpleDirectoryReader
+import pytest
+
+from llama_index.readers.file.base import SimpleDirectoryReader
 
 
 def test_recursive() -> None:
@@ -202,13 +204,7 @@ def test_file_metadata() -> None:
         documents = reader.load_data()
 
         for d in documents:
-            assert d.extra_info is not None and d.extra_info["author"] == test_author
-
-        # There should be no metadata if we choose to concatenate files
-        documents = reader.load_data(concatenate=True)
-
-        for d in documents:
-            assert d.extra_info is None
+            assert d.metadata is not None and d.metadata["author"] == test_author
 
 
 def test_excluded_files() -> None:
@@ -278,3 +274,76 @@ def test_excluded_files() -> None:
                         "test2.txt",
                         "test4.txt",
                     }
+
+
+def test_filename_as_doc_id() -> None:
+    """Test if file metadata is added to Document."""
+    # test file_metadata
+    with TemporaryDirectory() as tmp_dir:
+        with open(f"{tmp_dir}/test1.txt", "w") as f:
+            f.write("test1")
+        with open(f"{tmp_dir}/test2.txt", "w") as f:
+            f.write("test2")
+        with open(f"{tmp_dir}/test3.txt", "w") as f:
+            f.write("test3")
+        with open(f"{tmp_dir}/test4.md", "w") as f:
+            f.write("test4")
+        with open(f"{tmp_dir}/test5.json", "w") as f:
+            f.write('{"test_1": {"test_2": [1, 2, 3]}}')
+
+        reader = SimpleDirectoryReader(tmp_dir, filename_as_id=True)
+
+        documents = reader.load_data()
+
+        doc_paths = [
+            f"{tmp_dir}/test1.txt",
+            f"{tmp_dir}/test2.txt",
+            f"{tmp_dir}/test3.txt",
+            f"{tmp_dir}/test4.md",
+            f"{tmp_dir}/test5.json",
+        ]
+
+        # check paths. Split handles path_part_X doc_ids from md and json files
+        for doc in documents:
+            assert str(doc.node_id).split("_part")[0] in doc_paths
+
+
+def test_specifying_encoding() -> None:
+    """Test if file metadata is added to Document."""
+    # test file_metadata
+    with TemporaryDirectory() as tmp_dir:
+        with open(f"{tmp_dir}/test1.txt", "w", encoding="latin-1") as f:
+            f.write("test1á")
+        with open(f"{tmp_dir}/test2.txt", "w", encoding="latin-1") as f:
+            f.write("test2â")
+        with open(f"{tmp_dir}/test3.txt", "w", encoding="latin-1") as f:
+            f.write("test3ã")
+        with open(f"{tmp_dir}/test4.json", "w", encoding="latin-1") as f:
+            f.write('{"test_1á": {"test_2ã": ["â"]}}')
+
+        reader = SimpleDirectoryReader(
+            tmp_dir, filename_as_id=True, errors="strict", encoding="latin-1"
+        )
+
+        documents = reader.load_data()
+
+        doc_paths = [
+            f"{tmp_dir}/test1.txt",
+            f"{tmp_dir}/test2.txt",
+            f"{tmp_dir}/test3.txt",
+            f"{tmp_dir}/test4.json",
+        ]
+
+        # check paths. Split handles path_part_X doc_ids from md and json files
+        for doc in documents:
+            assert str(doc.node_id).split("_part")[0] in doc_paths
+
+
+def test_error_if_not_dir_or_file() -> None:
+    with pytest.raises(ValueError, match="Directory"):
+        SimpleDirectoryReader("not_a_dir")
+    with pytest.raises(ValueError, match="File"):
+        SimpleDirectoryReader(input_files=["not_a_file"])
+    with TemporaryDirectory() as tmp_dir:
+        with pytest.raises(ValueError, match="No files"):
+            SimpleDirectoryReader(tmp_dir)
